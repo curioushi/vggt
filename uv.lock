@@ -2831,13 +2831,17 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "einops" },
+    { name = "fastapi" },
     { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pillow" },
+    { name = "python-multipart" },
+    { name = "requests" },
     { name = "safetensors" },
     { name = "torch" },
     { name = "torchvision" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -2859,6 +2863,7 @@ demo = [
 [package.metadata]
 requires-dist = [
     { name = "einops" },
+    { name = "fastapi", specifier = ">=0.116.1" },
     { name = "gradio", marker = "extra == 'demo'", specifier = "==5.17.1" },
     { name = "huggingface-hub" },
     { name = "hydra-core", marker = "extra == 'demo'" },
@@ -2869,6 +2874,8 @@ requires-dist = [
     { name = "opencv-python" },
     { name = "opencv-python", marker = "extra == 'demo'" },
     { name = "pillow" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "requests", specifier = ">=2.32.4" },
     { name = "requests", marker = "extra == 'demo'" },
     { name = "safetensors" },
     { name = "scipy", marker = "extra == 'demo'" },
@@ -2876,6 +2883,7 @@ requires-dist = [
     { name = "torchvision", specifier = "==0.18.1" },
     { name = "tqdm", marker = "extra == 'demo'" },
     { name = "trimesh", marker = "extra == 'demo'" },
+    { name = "uvicorn", specifier = ">=0.35.0" },
     { name = "viser", marker = "extra == 'demo'", specifier = "==0.2.23" },
 ]
 provides-extras = ["demo"]

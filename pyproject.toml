@@ -9,6 +9,10 @@ dependencies = [
     "opencv-python",
     "torch==2.3.1",
     "torchvision==0.18.1",
+    "fastapi>=0.116.1",
+    "uvicorn>=0.35.0",
+    "python-multipart>=0.0.20",
+    "requests>=2.32.4",
 ]
 name = "vggt"
 requires-python = ">= 3.10"
