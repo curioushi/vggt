@@ -7,6 +7,8 @@ dependencies = [
     "einops",
     "safetensors",
     "opencv-python",
+    "torch==2.3.1",
+    "torchvision==0.18.1",
 ]
 name = "vggt"
 requires-python = ">= 3.10"
@@ -50,3 +52,7 @@ default = { solve-group = "default" }
 demo = { features = ["demo"], solve-group = "default" }
 
 [tool.pixi.tasks]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
