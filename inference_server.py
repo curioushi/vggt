@@ -238,68 +238,67 @@ class VGGTInferenceServer:
         return response_data
 
 
-
-
 # 全局服务器实例
 server = None
 
 
-from contextlib import asynccontextmanager
+def create_app(device: str = "cpu"):
+    """创建FastAPI应用"""
+    from contextlib import asynccontextmanager
+    
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """应用生命周期管理"""
+        # 启动时加载模型
+        global server
+        server = VGGTInferenceServer(device=device)
+        server.load_model()
+        yield
+        # 关闭时清理资源（如果需要）
+    
+    app = FastAPI(
+        title="VGGT推理服务器",
+        description="基于VGGT模型的图像推理HTTP服务",
+        version="1.0.0",
+        lifespan=lifespan
+    )
+    
+    @app.get("/health")
+    async def health_check():
+        """健康检查端点"""
+        return {"status": "healthy", "message": "VGGT推理服务器运行正常"}
+    
+    @app.post("/inference", response_model=InferenceResponse)
+    async def inference_endpoint(request: InferenceRequest):
+        """图像推理端点"""
+        try:
+            # 解码图像
+            image = server.decode_base64_image(request.image, request.image_format)
+            
+            # 运行推理
+            results, inference_time = server.run_inference(image, request.confidence_threshold)
+            
+            # 处理结果
+            response_data = server.process_results_for_response(
+                results, image, inference_time, request.confidence_threshold
+            )
+            
+            return InferenceResponse(
+                status="success",
+                message=f"推理完成，耗时 {inference_time:.2f} 秒",
+                data=response_data
+            )
+            
+        except Exception as e:
+            return InferenceResponse(
+                status="error",
+                message=f"推理失败: {str(e)}"
+            )
+    
+    return app
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
-    # 启动时加载模型
-    global server
-    server = VGGTInferenceServer(device="cpu")
-    server.load_model()
-    yield
-    # 关闭时清理资源（如果需要）
 
-# 创建FastAPI应用
-app = FastAPI(
-    title="VGGT推理服务器",
-    description="基于VGGT模型的图像推理HTTP服务",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-
-@app.get("/health")
-async def health_check():
-    """健康检查端点"""
-    return {"status": "healthy", "message": "VGGT推理服务器运行正常"}
-
-
-@app.post("/inference", response_model=InferenceResponse)
-async def inference_endpoint(request: InferenceRequest):
-    """图像推理端点"""
-    try:
-        # 解码图像
-        image = server.decode_base64_image(request.image, request.image_format)
-        
-        # 运行推理
-        results, inference_time = server.run_inference(image, request.confidence_threshold)
-        
-        # 处理结果
-        response_data = server.process_results_for_response(
-            results, image, inference_time, request.confidence_threshold
-        )
-        
-        return InferenceResponse(
-            status="success",
-            message=f"推理完成，耗时 {inference_time:.2f} 秒",
-            data=response_data
-        )
-        
-    except Exception as e:
-        return InferenceResponse(
-            status="error",
-            message=f"推理失败: {str(e)}"
-        )
-
-
-
+app = create_app()
 
 
 def parse_args():
@@ -336,8 +335,10 @@ def main():
     print(f"设备: {args.device}")
     print(f"API文档: http://{args.host}:{args.port}/docs")
     
+    app_instance = create_app(device=args.device)
+    
     uvicorn.run(
-        "inference_server:app",
+        app_instance,
         host=args.host,
         port=args.port,
         reload=False
