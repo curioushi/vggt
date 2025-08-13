@@ -46,6 +46,12 @@ def parse_args():
         required=True, 
         help="输出结果目录路径"
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cpu",
+        help="使用设备"
+    )
     return parser.parse_args()
 
 
@@ -63,7 +69,7 @@ def load_model():
     return model
 
 
-def run_inference(model, input_image):
+def run_inference(model, input_image, device):
     """运行模型推理"""
     print(f"处理图像文件: {input_image}")
     
@@ -79,7 +85,7 @@ def run_inference(model, input_image):
     # 加载和预处理单个图像
     print("预处理图像...")
     images = load_and_preprocess_images([input_image])  # 传入列表，包含单个图像路径
-    images = images.to('cpu')
+    images = images.to(device)
     print(f"预处理完成，图像形状: {images.shape}")
     
     # 运行推理 (使用CPU)
@@ -263,14 +269,14 @@ def main():
         raise ValueError(f"输入图像文件不存在: {args.input_image}")
     
     # 强制使用CPU
-    device = "cpu"
+    device = args.device
     print(f"使用设备: {device}")
     
     # 加载模型
-    model = load_model()
+    model = load_model().to(device)
     
     # 运行推理
-    results = run_inference(model, args.input_image)
+    results = run_inference(model, args.input_image, device)
     
     # 保存结果
     save_results(results, args.output_dir)
