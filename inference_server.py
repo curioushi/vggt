@@ -215,11 +215,13 @@ class VGGTInferenceServer:
         # 编码图像和world_points为Base64
         processed_image_b64 = self.encode_image_to_base64(processed_image, "PNG")
         world_points_b64 = self.encode_numpy_to_base64(results['world_points'])
+        world_points_conf_b64 = self.encode_numpy_to_base64(results['world_points_conf'])
         
         # 准备响应数据
         response_data = {
             "processed_image": processed_image_b64,
             "world_points": world_points_b64,
+            "world_points_conf": world_points_conf_b64,
             "camera_params": {
                 "extrinsic": results['extrinsic'].tolist(),
                 "intrinsic": results['intrinsic'].tolist()
