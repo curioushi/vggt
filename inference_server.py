@@ -42,7 +42,6 @@ class InferenceRequest(BaseModel):
     """推理请求模型"""
     image: str  # Base64编码的图像数据
     image_format: str = "jpeg"  # 图像格式
-    confidence_threshold: float = 3.0  # 置信度阈值
 
 
 class InferenceResponse(BaseModel):
@@ -133,7 +132,7 @@ class VGGTInferenceServer:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
     
-    def run_inference(self, image: Image.Image, confidence_threshold: float = 3.0) -> Dict[str, Any]:
+    def run_inference(self, image: Image.Image) -> Dict[str, Any]:
         """运行模型推理"""
         print("开始预处理图像...")
         
@@ -165,7 +164,8 @@ class VGGTInferenceServer:
         
         # 转换tensor为numpy
         depth_map_np = depth_map.cpu().numpy()
-        extrinsic_np = extrinsic.cpu().numpy()
+        # extrinsic_np = extrinsic.cpu().numpy()
+        extrinsic_np = np.eye(4).reshape(1, 4, 4)
         intrinsic_np = intrinsic.cpu().numpy()
         
         # 形状调整
@@ -188,6 +188,7 @@ class VGGTInferenceServer:
         )
 
         transform = transforms[0]
+        transform_inv = np.linalg.inv(transform)
         depth_map_np = depth_map_np.squeeze(0).squeeze(-1)
         world_points = world_points.squeeze(0)
         world_points_conf = predictions.get("world_points_conf", torch.zeros_like(depth_map)).cpu().numpy().squeeze(0).squeeze(0)
@@ -222,23 +223,29 @@ class VGGTInferenceServer:
             mode='constant',
             cval=0.0
         )
+
+        intrinsic_np_original = transform_inv @ intrinsic_np[0]
+        intrinsic_np_original[0, 0], intrinsic_np_original[1, 1] = intrinsic_np_original[1, 1], intrinsic_np_original[0, 0]
+        intrinsic_np_original[0, 2], intrinsic_np_original[1, 2] = intrinsic_np_original[1, 2], intrinsic_np_original[0, 2]
         
         # Update the variables with transformed results
         depth_map_np = depth_map_original
         world_points = world_points_original
         world_points_conf = world_points_conf_original
+        intrinsic_np = intrinsic_np_original
         
         # 准备结果
         results = {
             'depth': depth_map_np,
             'world_points': world_points,
             'world_points_conf': world_points_conf,
+            'intrinsic': intrinsic_np,
         }
         
         print("后处理完成")
         return results, inference_time
     
-    def process_results_for_response(self, results: Dict[str, Any], original_image: Image.Image, inference_time: float, confidence_threshold: float) -> Dict[str, Any]:
+    def process_results_for_response(self, results: Dict[str, Any], original_image: Image.Image, inference_time: float) -> Dict[str, Any]:
         """处理结果以准备HTTP响应"""
 
         # 编码图像和world_points为Base64
@@ -251,8 +258,8 @@ class VGGTInferenceServer:
             "processed_image": processed_image_b64,
             "world_points": world_points_b64,
             "world_points_conf": world_points_conf_b64,
+            "intrinsic": results['intrinsic'].tolist(),
             "metadata": {
-                "confidence_threshold": confidence_threshold,
                 "processing_time": inference_time,
             }
         }
@@ -298,11 +305,11 @@ def create_app(device: str = "cpu"):
             image = server.decode_base64_image(request.image, request.image_format)
             
             # 运行推理
-            results, inference_time = server.run_inference(image, request.confidence_threshold)
+            results, inference_time = server.run_inference(image)
             
             # 处理结果
             response_data = server.process_results_for_response(
-                results, image, inference_time, request.confidence_threshold
+                results, image, inference_time
             )
             
             return InferenceResponse(
