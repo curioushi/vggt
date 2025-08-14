@@ -136,17 +136,10 @@ def test_base64_endpoint(server_url: str, image_path: str):
                 save_ply_ascii(filtered_points, filtered_colors, ply_path)
                 print(f"点云PLY文件已保存到: {ply_path}")
             
-            # 保存相机参数
-            with open('output_camera_params.json', 'w') as f:
-                json.dump(data['camera_params'], f, indent=2)
-            print("相机参数已保存为: output_camera_params.json")
-            
             # 打印元数据
             metadata = data['metadata']
-            print(f"原始图像形状: {metadata['original_shape']}")
-            print(f"处理后图像形状: {metadata['processed_shape']}")
-            print(f"World points形状: {metadata['world_points_shape']}")
             print(f"处理时间: {metadata['processing_time']:.2f}秒")
+            print(f"置信度阈值: {metadata['confidence_threshold']}")
             
     else:
         print(f"请求失败，状态码: {response.status_code}")

@@ -19,6 +19,7 @@ import base64
 import io
 import time
 import numpy as np
+from scipy.ndimage import affine_transform
 import torch
 from PIL import Image
 import torchvision.transforms as transforms
@@ -125,8 +126,8 @@ class VGGTInferenceServer:
         
         try:
             # 使用现有的预处理函数
-            images = load_and_preprocess_images([temp_path])
-            return images.to(self.device)
+            images, transforms = load_and_preprocess_images([temp_path], mode="pad", return_transforms=True)
+            return images.to(self.device), transforms
         finally:
             # 清理临时文件
             if os.path.exists(temp_path):
@@ -137,7 +138,7 @@ class VGGTInferenceServer:
         print("开始预处理图像...")
         
         # 预处理图像
-        images = self.preprocess_image_in_memory(image)
+        images, transforms = self.preprocess_image_in_memory(image)
         print(f"预处理完成，图像形状: {images.shape}")
         
         # 运行推理
@@ -185,15 +186,53 @@ class VGGTInferenceServer:
             extrinsic_np, 
             intrinsic_np
         )
+
+        transform = transforms[0]
+        depth_map_np = depth_map_np.squeeze(0).squeeze(-1)
+        world_points = world_points.squeeze(0)
+        world_points_conf = predictions.get("world_points_conf", torch.zeros_like(depth_map)).cpu().numpy().squeeze(0).squeeze(0)
+
+        # Transform results back to original image size
+        original_width, original_height = image.size
+        depth_map_original = affine_transform(
+            depth_map_np, 
+            transform,
+            output_shape=(original_height, original_width),
+            mode='constant',
+            cval=0.0
+        )
+        
+        # Transform world points back to original size
+        # world_points has shape (H, W, 3), need to transform each channel
+        world_points_original = np.zeros((original_height, original_width, 3))
+        for i in range(3):
+            world_points_original[:, :, i] = affine_transform(
+                world_points[:, :, i],
+                transform,
+                output_shape=(original_height, original_width),
+                mode='constant',
+                cval=0.0
+            )
+        
+        # Transform world points confidence back to original size
+        world_points_conf_original = affine_transform(
+            world_points_conf,
+            transform,
+            output_shape=(original_height, original_width),
+            mode='constant',
+            cval=0.0
+        )
+        
+        # Update the variables with transformed results
+        depth_map_np = depth_map_original
+        world_points = world_points_original
+        world_points_conf = world_points_conf_original
         
         # 准备结果
         results = {
-            'extrinsic': extrinsic_np.squeeze(0),
-            'intrinsic': intrinsic_np.squeeze(0),
-            'world_points': world_points.squeeze(0),
-            'depth': depth_map_np.squeeze(0).squeeze(-1),
-            'world_points_conf': predictions.get("world_points_conf", torch.zeros_like(depth_map)).cpu().numpy().squeeze(0).squeeze(0),
-            'preprocessed_images': images.cpu().numpy()
+            'depth': depth_map_np,
+            'world_points': world_points,
+            'world_points_conf': world_points_conf,
         }
         
         print("后处理完成")
@@ -201,19 +240,9 @@ class VGGTInferenceServer:
     
     def process_results_for_response(self, results: Dict[str, Any], original_image: Image.Image, inference_time: float, confidence_threshold: float) -> Dict[str, Any]:
         """处理结果以准备HTTP响应"""
-        # 获取预处理后的图像
-        preprocessed_images = results['preprocessed_images']
-        
-        # 转换为PIL图像
-        if len(preprocessed_images.shape) == 4:
-            img_tensor = torch.from_numpy(preprocessed_images[0])  # (C, H, W)
-        else:
-            img_tensor = torch.from_numpy(preprocessed_images)
-        
-        processed_image = self.to_pil(img_tensor)
-        
+
         # 编码图像和world_points为Base64
-        processed_image_b64 = self.encode_image_to_base64(processed_image, "PNG")
+        processed_image_b64 = self.encode_image_to_base64(original_image, "PNG")
         world_points_b64 = self.encode_numpy_to_base64(results['world_points'])
         world_points_conf_b64 = self.encode_numpy_to_base64(results['world_points_conf'])
         
@@ -222,18 +251,9 @@ class VGGTInferenceServer:
             "processed_image": processed_image_b64,
             "world_points": world_points_b64,
             "world_points_conf": world_points_conf_b64,
-            "camera_params": {
-                "extrinsic": results['extrinsic'].tolist(),
-                "intrinsic": results['intrinsic'].tolist()
-            },
             "metadata": {
-                "original_shape": list(original_image.size[::-1]) + [3],  # [H, W, 3]
-                "processed_shape": list(processed_image.size[::-1]) + [3],
-                "world_points_shape": list(results['world_points'].shape),
                 "confidence_threshold": confidence_threshold,
                 "processing_time": inference_time,
-                "depth_shape": list(results['depth'].shape),
-                "confidence_shape": list(results['world_points_conf'].shape)
             }
         }
         

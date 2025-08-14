@@ -94,7 +94,7 @@ def load_and_preprocess_images_square(image_path_list, target_size=1024):
     return images, original_coords
 
 
-def load_and_preprocess_images(image_path_list, mode="crop"):
+def load_and_preprocess_images(image_path_list, mode="crop", return_transforms=False):
     """
     A quick start function to load and preprocess images for model input.
     This assumes the images should have the same shape for easier batching, but our model can also work well with different shapes.
@@ -105,6 +105,7 @@ def load_and_preprocess_images(image_path_list, mode="crop"):
                              - "crop" (default): Sets width to 518px and center crops height if needed.
                              - "pad": Preserves all pixels by making the largest dimension 518px
                                and padding the smaller dimension to reach a square shape.
+        return_transforms (bool, optional): Whether to return the 2D affine transforms applied to the images.
 
     Returns:
         torch.Tensor: Batched tensor of preprocessed images with shape (N, 3, H, W)
@@ -133,6 +134,8 @@ def load_and_preprocess_images(image_path_list, mode="crop"):
     shapes = set()
     to_tensor = TF.ToTensor()
     target_size = 518
+
+    transforms = [] # list of 2D affine transforms applied to the images
 
     # First process all images and collect their shapes
     for image_path in image_path_list:
@@ -165,6 +168,11 @@ def load_and_preprocess_images(image_path_list, mode="crop"):
             # Calculate height maintaining aspect ratio, divisible by 14
             new_height = round(height * (new_width / width) / 14) * 14
 
+        current_affine = np.array([
+            [new_width / width, 0, 0],
+            [0, new_height / height, 0],
+            [0, 0, 1]
+        ], dtype=float)
         # Resize with new dimensions (width, height)
         img = img.resize((new_width, new_height), Image.Resampling.BICUBIC)
         img = to_tensor(img)  # Convert to tensor (0, 1)
@@ -173,9 +181,13 @@ def load_and_preprocess_images(image_path_list, mode="crop"):
         if mode == "crop" and new_height > target_size:
             start_y = (new_height - target_size) // 2
             img = img[:, start_y : start_y + target_size, :]
-
+            current_affine = np.array([
+                [1, 0, 0],
+                [0, 1, -start_y],
+                [0, 0, 1]
+            ], dtype=float) @ current_affine
         # For pad mode, pad to make a square of target_size x target_size
-        if mode == "pad":
+        elif mode == "pad":
             h_padding = target_size - img.shape[1]
             w_padding = target_size - img.shape[2]
 
@@ -190,8 +202,16 @@ def load_and_preprocess_images(image_path_list, mode="crop"):
                     img, (pad_left, pad_right, pad_top, pad_bottom), mode="constant", value=1.0
                 )
 
+                current_affine = np.array([
+                    [1, 0, pad_top],
+                    [0, 1, pad_left],
+                    [0, 0, 1]
+                ], dtype=float) @ current_affine
+
+
         shapes.add((img.shape[1], img.shape[2]))
         images.append(img)
+        transforms.append(current_affine)
 
     # Check if we have different shapes
     # In theory our model can also work well with different shapes
@@ -227,4 +247,7 @@ def load_and_preprocess_images(image_path_list, mode="crop"):
         if images.dim() == 3:
             images = images.unsqueeze(0)
 
-    return images
+    if return_transforms:
+        return images, transforms
+    else:
+        return images
